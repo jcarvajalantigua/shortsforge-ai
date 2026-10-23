@@ -1,0 +1,12 @@
+.env
+config.yaml
+client_secrets.json
+*.token
+.venv/
+__pycache__/
+content/analytics.csv
+content/scripts/
+output/
+ready/
+*.mp4
+*.wav

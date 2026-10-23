@@ -1,0 +1,27 @@
+# Núcleo (el pipeline funciona offline con la stdlib + estos dos)
+PyYAML>=6.0
+Pillow>=10.0
+
+# Voz (instalar para audio real; sin esto, tts_generator deja wav silencioso + manifiesto)
+edge-tts>=7.0.0
+
+# Modo espejo (tools/clip_maker.py): transcripción local con timestamps.
+# INSTALADO en .venv el 2026-10-20 (faster-whisper 1.2.1 + ctranslate2 + av).
+# ⚠️ INCOMPATIBILIDAD verificada 2026-10-20: faster-whisper 1.2.1 llama
+# av.open(..., metadata_errors="ignore") y av 19.0.1 ya no acepta ese kwarg
+# (TypeError). clip_maker lo evita decodificando con ffmpeg y pasando un
+# numpy array a transcribe() — NO "arreglar" volviendo a pasar rutas.
+# Es un paquete pesado (~200 MB con dependencias): por eso queda documentado.
+# El modelo (config mirror_sources.whisper_model, "base" ~150 MB) se descarga
+# de HuggingFace la primera vez y queda en la caché local (~/.cache/huggingface).
+# Sin faster-whisper, clip_maker cae al SRT existente junto al video (--srt).
+faster-whisper>=1.0
+
+# Subida a YouTube (solo necesarias para uploader.py sin --dry-run)
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+google-auth-httplib2>=0.2
+
+# Sistema (no pip): ffmpeg  ->  sudo apt install ffmpeg  /  brew install ffmpeg
+# Verificado en esta máquina 2026-10-20: ffmpeg 8.1.2 presente, Pillow 10.2.0, PyYAML presente.
+# edge-tts NO estaba instalado al momento de la prueba de humo (ver LOG.md).

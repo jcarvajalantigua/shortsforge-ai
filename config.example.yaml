@@ -1,0 +1,30 @@
+# ShortsForge AI — example configuration. Copy to config.yaml and make it yours.
+channel:
+  name: "Your Channel"
+  language: "es"            # content language (es, en, ...)
+  audience: "your audience description"
+
+llm:
+  endpoint: "http://localhost:11434/v1"   # env LOCAL_LLM_BASE_URL wins
+  model: "qwen2.5:14b"                    # env LOCAL_LLM_MODEL wins
+  timeout_sec: 180
+
+judge:
+  target_score: 100
+  floor: 70                 # nothing below this is ever produced
+  max_attempts: 4
+
+self_improve:
+  min_views: 50             # hard gate: learn ONLY from proven winners
+  min_pct_viewed: 60
+
+editorial:
+  mix: {money-finance: 40, ai-technology: 30, business: 20, practical-life: 10}
+  rotation_window: 10
+
+tts:
+  voice: "assets/voices/es_MX-claude-high.onnx"
+  speed: 1.20
+
+automation:
+  auto_publish: false       # true only with YOUR channel OAuth connected
