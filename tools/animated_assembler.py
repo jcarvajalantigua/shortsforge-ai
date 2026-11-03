@@ -31,11 +31,17 @@ Uso:
     python3 tools/animated_assembler.py --script-json content/scripts/<slug>.json \
         --audio output/<slug>/voice.wav --out output/<slug>/short.mp4
 """
-import argparse, json, sys
+
+import argparse
+import json
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent))
+import layout
+import render_core
 from common import load_json
-import layout, render_core
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -46,14 +52,28 @@ def main():
     script = load_json(args.script_json, {})
     fails = layout.validate_layout(script)
     if fails:
-        print(json.dumps({"format": "foto_real", "layout_version": 2, "layout_failures": fails},
-                         ensure_ascii=False, indent=2)); sys.exit(2)
+        print(
+            json.dumps(
+                {"format": "foto_real", "layout_version": 2, "layout_failures": fails},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        sys.exit(2)
     # Puerta dura del formato: sin fotos reales registradas NO hay render.
     rfails = layout.validate_real_images(script)
     if rfails:
-        print(json.dumps({"format": "foto_real",
-                          "error": "formato «foto real» sin fotos válidas: el render NO cae a imágenes generadas ni a iconos",
-                          "real_failures": rfails}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "format": "foto_real",
+                    "error": "formato «foto real» sin fotos válidas: el render NO cae a imágenes generadas ni a iconos",
+                    "real_failures": rfails,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         sys.exit(3)
     assigns, _ = layout.assign_real_images(script)
     scenes = layout.effective_scenes(script)
@@ -64,26 +84,50 @@ def main():
         flip = (not prev_flip) if reuse else False
         kb = "out" if reuse else "in"
         cc = a.get("crop_centering") or (0.5, 0.5)
-        images.append(layout.make_scene_real(sc, script.get("kicker", ""), a["path"],
-                                             flip=flip, crop_centering=cc))
+        images.append(
+            layout.make_scene_real(
+                sc, script.get("kicker", ""), a["path"], flip=flip, crop_centering=cc
+            )
+        )
         scene_meta.append({"kb": kb})
-        used.append({"role": a["role"], "file": a["file"], "flip": flip, "ken_burns": kb,
-                     "source": a["source"], "source_url": a["source_url"],
-                     "license": a["license"], "author": a["author"]})
+        used.append(
+            {
+                "role": a["role"],
+                "file": a["file"],
+                "flip": flip,
+                "ken_burns": kb,
+                "source": a["source"],
+                "source_url": a["source_url"],
+                "license": a["license"],
+                "author": a["author"],
+            }
+        )
         prev_path, prev_flip = a["path"], flip
     try:
-        result = render_core.render(script, images, args.audio, Path(args.out), scene_meta=scene_meta)
+        result = render_core.render(
+            script, images, args.audio, Path(args.out), scene_meta=scene_meta
+        )
     except Exception as e:
-        print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2)); sys.exit(1)
+        print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2))
+        sys.exit(1)
     rdir, rdata = layout.load_real_manifest(script)
-    manifest = {"format": "foto_real", "layout_version": 2, "scenes": len(scenes),
-                "visual_language": "fotografía real del tema en alta calidad a pantalla completa + Ken Burns suave; sin imágenes generadas por IA, sin iconos ni personajes PIL",
-                "real_dir": str(rdir), "real_manifest": str(rdir / "manifest.json"),
-                "images": used, "audio": args.audio, **result}
+    manifest = {
+        "format": "foto_real",
+        "layout_version": 2,
+        "scenes": len(scenes),
+        "visual_language": "fotografía real del tema en alta calidad a pantalla completa + Ken Burns suave; sin imágenes generadas por IA, sin iconos ni personajes PIL",
+        "real_dir": str(rdir),
+        "real_manifest": str(rdir / "manifest.json"),
+        "images": used,
+        "audio": args.audio,
+        **result,
+    }
     out = Path(args.out)
     (out.parent / "animated_manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
+
 
 if __name__ == "__main__":
     main()

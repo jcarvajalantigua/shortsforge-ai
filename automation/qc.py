@@ -84,13 +84,19 @@ en la descripción (la interconexión se conecta tras crear el canal).
 Uso: python3 automation/qc.py --package output/<slug>
 Salida: JSON {passed, publish_ready, checks, failures} y qc.json en el paquete.
 """
-import argparse, json, re, subprocess, sys
+
+import argparse
+import json
+import re
+import subprocess
+import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-from common import load_json  # noqa: E402
-import retention_optimizer  # noqa: E402
-import layout as layout_mod  # noqa: E402
+import layout as layout_mod
+import retention_optimizer
+from common import load_json
 
 BANNED = [
     (r"\$\s*\d", "precio con símbolo $"),
@@ -108,75 +114,209 @@ BANNED = [
     (r"precio(s)?\s*[:=]\s*\$", "precio con símbolo"),
 ]
 
+
 def probe(path: Path) -> dict:
-    p = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
-                        "stream=codec_type,width,height", "-show_entries", "format=duration",
-                        "-of", "json", str(path)], capture_output=True, text=True)
+    p = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,width,height",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
     return json.loads(p.stdout or "{}")
 
+
 def volumes(path: Path) -> tuple[float, float]:
-    p = subprocess.run(["ffmpeg", "-i", str(path), "-af", "volumedetect", "-vn", "-sn", "-dn",
-                        "-f", "null", "/dev/null"], capture_output=True, text=True)
+    p = subprocess.run(
+        [
+            "ffmpeg",
+            "-i",
+            str(path),
+            "-af",
+            "volumedetect",
+            "-vn",
+            "-sn",
+            "-dn",
+            "-f",
+            "null",
+            "/dev/null",
+        ],
+        capture_output=True,
+        text=True,
+    )
     mean = re.search(r"mean_volume:\s*(-?[\d.]+) dB", p.stderr)
     mx = re.search(r"max_volume:\s*(-?[\d.]+) dB", p.stderr)
-    return (float(mean.group(1)) if mean else -99.0, float(mx.group(1)) if mx else -99.0)
+    return (
+        float(mean.group(1)) if mean else -99.0,
+        float(mx.group(1)) if mx else -99.0,
+    )
+
 
 def scan_banned(text: str) -> list[str]:
     low = f" {text.lower()} "
     return [label for pat, label in BANNED if re.search(pat, low)]
 
+
 # --- MARCO DE ALCANCE (content/marco-alcance.md): checks de audiencia nueva ---
-HOOK_FORBIDDEN = ("hola", "bienvenidos", "bienvenidas", "en este video", "en este vídeo",
-                  "hoy vamos a", "qué tal", "como están", "como estan", "mi nombre es")
-HOOK_NUMBER_RE = re.compile(r"\d|\b(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|"
-                            r"veint\w+|treinta\w*|cuarenta\w*|cincuenta\w*|cien\w*|mil|mill[oó]n\w*|"
-                            r"primer\w*|segund\w*|tercer\w*)\b")
-HOOK_PROMISES = ("te doy", "te muestro", "te enseño", "te enseno", "gratis", "con números",
-                 "con numeros", "paso a paso", "costando dinero", "te cuesta", "te puede costar",
-                 "sin pagar", "descubre", "aprende a", "evita pagar")
+HOOK_FORBIDDEN = (
+    "hola",
+    "bienvenidos",
+    "bienvenidas",
+    "en este video",
+    "en este vídeo",
+    "hoy vamos a",
+    "qué tal",
+    "como están",
+    "como estan",
+    "mi nombre es",
+)
+HOOK_NUMBER_RE = re.compile(
+    r"\d|\b(una?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|"
+    r"veint\w+|treinta\w*|cuarenta\w*|cincuenta\w*|cien\w*|mil|mill[oó]n\w*|"
+    r"primer\w*|segund\w*|tercer\w*)\b"
+)
+HOOK_PROMISES = (
+    "te doy",
+    "te muestro",
+    "te enseño",
+    "te enseno",
+    "gratis",
+    "con números",
+    "con numeros",
+    "paso a paso",
+    "costando dinero",
+    "te cuesta",
+    "te puede costar",
+    "sin pagar",
+    "descubre",
+    "aprende a",
+    "evita pagar",
+)
 # Jerga del nicho (ETAPA 4): patrón del término -> patrones que cuentan como
 # explicación simple dentro de la misma pieza. ASSUMED_TERMS: términos que el
 # canal ya asume explicados en piezas anteriores (vacío hoy a propósito:
 # cada pieza debe funcionar para un desconocido, sin contexto previo).
 ASSUMED_TERMS: set[str] = set()
 JARGON = {
-    "apr": (r"\bapr\b", [r"interés anual", r"tasa de interés", r"apr\s+es", r"es el interés"]),
-    "llc": (r"\bllc\b", [r"responsabilidad limitada", r"llc\s+es", r"compañ[ií]a registrada"]),
-    "ein": (r"\bein\b", [r"número de identificación", r"numero de identificacion",
-                         r"número fiscal", r"numero fiscal", r"ein\s+es"]),
-    "ira": (r"\bira\b", [r"jubilación", r"jubilacion", r"cuenta de retiro", r"ira\s+es"]),
-    "tramo": (r"\btramos?\b", [r"tramos? de impuestos", r"rango de ingreso",
-                               r"escala de ingreso", r"tramos?\s+(son|es)\b"]),
-    "prima": (r"\bprimas?\b", [r"prima\s+es", r"lo que pagas", r"pago mensual",
-                               r"cuota mensual", r"prima de (la )?parte b de medicare"]),
+    "apr": (
+        r"\bapr\b",
+        [r"interés anual", r"tasa de interés", r"apr\s+es", r"es el interés"],
+    ),
+    "llc": (
+        r"\bllc\b",
+        [r"responsabilidad limitada", r"llc\s+es", r"compañ[ií]a registrada"],
+    ),
+    "ein": (
+        r"\bein\b",
+        [
+            r"número de identificación",
+            r"numero de identificacion",
+            r"número fiscal",
+            r"numero fiscal",
+            r"ein\s+es",
+        ],
+    ),
+    "ira": (
+        r"\bira\b",
+        [r"jubilación", r"jubilacion", r"cuenta de retiro", r"ira\s+es"],
+    ),
+    "tramo": (
+        r"\btramos?\b",
+        [
+            r"tramos? de impuestos",
+            r"rango de ingreso",
+            r"escala de ingreso",
+            r"tramos?\s+(son|es)\b",
+        ],
+    ),
+    "prima": (
+        r"\bprimas?\b",
+        [
+            r"prima\s+es",
+            r"lo que pagas",
+            r"pago mensual",
+            r"cuota mensual",
+            r"prima de (la )?parte b de medicare",
+        ],
+    ),
 }
 SIGNAL_TRIGGERS = {  # mismo criterio que tools/script_generator.py
     "guardados": ("guárdalo", "guardalo", "guarda este video", "guarda esta"),
-    "compartidos": ("comparte", "compártelo", "compartelo", "envíaselo", "enviaselo", "pásalo", "pasalo"),
+    "compartidos": (
+        "comparte",
+        "compártelo",
+        "compartelo",
+        "envíaselo",
+        "enviaselo",
+        "pásalo",
+        "pasalo",
+    ),
     "comentarios": ("comenta",),
-    "suscripcion": ("sigue el canal", "suscríbete", "suscribete", "síguenos", "siguenos"),
+    "suscripcion": (
+        "sigue el canal",
+        "suscríbete",
+        "suscribete",
+        "síguenos",
+        "siguenos",
+    ),
 }
+
 
 def _first_sentence(text: str) -> str:
     m = re.split(r"(?<=[.?!])\s+", (text or "").strip(), maxsplit=1)
     return m[0] if m else (text or "")[:140]
 
+
 def _stem_words(text: str) -> set[str]:
-    stop = {"para", "como", "este", "esta", "esto", "tiene", "puede", "desde", "sobre",
-            "cuando", "porque", "canal", "sigue", "comenta", "video"}
+    stop = {
+        "para",
+        "como",
+        "este",
+        "esta",
+        "esto",
+        "tiene",
+        "puede",
+        "desde",
+        "sobre",
+        "cuando",
+        "porque",
+        "canal",
+        "sigue",
+        "comenta",
+        "video",
+    }
     out = set()
     for w in re.findall(r"[a-záéíóúñ]{4,}", (text or "").lower()):
         if w not in stop:
-            out.add(w[:6] if len(w) >= 7 else w)  # tallo simple: herramienta~herramientas
+            out.add(
+                w[:6] if len(w) >= 7 else w
+            )  # tallo simple: herramienta~herramientas
     return out
+
 
 def marco_checks(script: dict) -> dict:
     """Los 4 checks del marco de alcance sobre un guión. Devuelve
     {nombre: (ok, detalle)}. Pensado también para la prueba de humo."""
     res = {}
     if not script:
-        return {n: (False, "sin guión") for n in
-                ("hook_sin_contexto", "jerga_explicada", "senal_objetivo", "cierre_loop")}
+        return {
+            n: (False, "sin guión")
+            for n in (
+                "hook_sin_contexto",
+                "jerga_explicada",
+                "senal_objetivo",
+                "cierre_loop",
+            )
+        }
     text = script.get("full_text", "") or ""
     low = text.lower()
     sections = script.get("sections", {}) or {}
@@ -191,10 +331,19 @@ def marco_checks(script: dict) -> dict:
     has_n = bool(HOOK_NUMBER_RE.search(head))
     prom = [p for p in HOOK_PROMISES if p in head]
     ok_hook = not forb and (has_q or has_n or bool(prom))
-    det = (f"prohibido: {forb}" if forb else
-           ("pregunta en 0-2 s" if has_q else "número en 0-2 s" if has_n else
-            f"promesa concreta: «{prom[0]}»" if prom else
-            "sin pregunta, número ni promesa en las primeras ~10 palabras"))
+    det = (
+        f"prohibido: {forb}"
+        if forb
+        else (
+            "pregunta en 0-2 s"
+            if has_q
+            else "número en 0-2 s"
+            if has_n
+            else f"promesa concreta: «{prom[0]}»"
+            if prom
+            else "sin pregunta, número ni promesa en las primeras ~10 palabras"
+        )
+    )
     res["hook_sin_contexto"] = (ok_hook, f"hook: «{hook[:70]}…» — {det}")
     # 2) JERGA EXPLICADA: término presente sin explicación simple = falla.
     sin_expl = []
@@ -203,36 +352,57 @@ def marco_checks(script: dict) -> dict:
             continue
         if re.search(pat, low) and not any(re.search(e, low) for e in expls):
             sin_expl.append(term.upper())
-    res["jerga_explicada"] = (not sin_expl,
-                               f"jerga sin explicar: {', '.join(sin_expl)}" if sin_expl
-                               else "toda la jerga del nicho va explicada en lenguaje simple (o no se usa)")
+    res["jerga_explicada"] = (
+        not sin_expl,
+        f"jerga sin explicar: {', '.join(sin_expl)}"
+        if sin_expl
+        else "toda la jerga del nicho va explicada en lenguaje simple (o no se usa)",
+    )
     # 3) SEÑAL OBJETIVO: declarada en el guión y con disparador en el texto
     #    (comentarios simples: el disparador vive en el cierre).
-    senal = script.get("senal_objetivo") or (script.get("estructura_alcance") or {}).get("senal_objetivo")
+    senal = script.get("senal_objetivo") or (
+        script.get("estructura_alcance") or {}
+    ).get("senal_objetivo")
     if senal not in SIGNAL_TRIGGERS:
-        res["senal_objetivo"] = (False, f"señal no declarada o inválida: {senal!r} "
-                                        "(una de: guardados/compartidos/comentarios/suscripcion)")
+        res["senal_objetivo"] = (
+            False,
+            f"señal no declarada o inválida: {senal!r} "
+            "(una de: guardados/compartidos/comentarios/suscripcion)",
+        )
     else:
         scope = closing if senal == "comentarios" else text
         trig = [t for t in SIGNAL_TRIGGERS[senal] if t in scope.lower()]
-        res["senal_objetivo"] = (bool(trig),
-                                 f"señal «{senal}» con disparador «{trig[0]}»" if trig
-                                 else f"señal «{senal}» declarada pero SIN disparador en el guión")
+        res["senal_objetivo"] = (
+            bool(trig),
+            f"señal «{senal}» con disparador «{trig[0]}»"
+            if trig
+            else f"señal «{senal}» declarada pero SIN disparador en el guión",
+        )
     # 4) CIERRE EN LOOP: la última frase devuelve la promesa/pregunta del hook.
     if "¿" in closing or "?" in closing:
-        res["cierre_loop"] = (True, "el cierre devuelve una pregunta: el inicio vuelve a tener sentido (replay)")
+        res["cierre_loop"] = (
+            True,
+            "el cierre devuelve una pregunta: el inicio vuelve a tener sentido (replay)",
+        )
     else:
         overlap = _stem_words(hook) & _stem_words(closing)
-        res["cierre_loop"] = (len(overlap) >= 2,
-                              f"el cierre retoma el hook ({', '.join(sorted(overlap)[:3])})" if len(overlap) >= 2
-                              else "el cierre NO conecta con la promesa del hook: se pierde el replay")
+        res["cierre_loop"] = (
+            len(overlap) >= 2,
+            f"el cierre retoma el hook ({', '.join(sorted(overlap)[:3])})"
+            if len(overlap) >= 2
+            else "el cierre NO conecta con la promesa del hook: se pierde el replay",
+        )
     return res
+
 
 def check(pkg: Path) -> dict:
     checks, failures = {}, []
+
     def do(name, ok, detail=""):
         checks[name] = {"ok": bool(ok), "detail": detail}
-        if not ok: failures.append(f"{name}: {detail}")
+        if not ok:
+            failures.append(f"{name}: {detail}")
+
     mp4 = pkg / "short.mp4"
     do("video_existe", mp4.exists(), str(mp4))
     dur, w, h, has_audio = 0.0, 0, 0, False
@@ -240,101 +410,179 @@ def check(pkg: Path) -> dict:
         info = probe(mp4)
         dur = float((info.get("format") or {}).get("duration") or 0)
         for s in info.get("streams", []):
-            if s.get("codec_type") == "video": w, h = s.get("width", 0), s.get("height", 0)
-            if s.get("codec_type") == "audio": has_audio = True
+            if s.get("codec_type") == "video":
+                w, h = s.get("width", 0), s.get("height", 0)
+            if s.get("codec_type") == "audio":
+                has_audio = True
     do("resolucion_1080x1920", (w, h) == (1080, 1920), f"{w}x{h}")
     do("duracion_20_95s", 20 <= dur <= 95, f"{dur:.1f} s")
     do("audio_presente", has_audio, "stream de audio")
     mean, mx = volumes(mp4) if mp4.exists() else (-99.0, -99.0)
     do("audio_no_silencio", mean > -45 and mx > -20, f"mean {mean} dB, max {mx} dB")
     srt = pkg / "captions.srt"
-    blocks = len(re.findall(r"\d{2}:\d{2}:\d{2},\d{3} -->", srt.read_text(encoding="utf-8"))) if srt.exists() else 0
+    blocks = (
+        len(re.findall(r"\d{2}:\d{2}:\d{2},\d{3} -->", srt.read_text(encoding="utf-8")))
+        if srt.exists()
+        else 0
+    )
     do("subtitulos", blocks >= 5, f"{blocks} bloques")
-    is_clip = not (pkg / "metadata.json").exists() and (pkg / "metadata_youtube.json").exists()
-    meta = load_json(pkg / "metadata.json", {}) or (load_json(pkg / "metadata_youtube.json", {}) if is_clip else {})
-    title = meta.get("title", ""); desc = meta.get("description", "")
+    is_clip = (
+        not (pkg / "metadata.json").exists()
+        and (pkg / "metadata_youtube.json").exists()
+    )
+    meta = load_json(pkg / "metadata.json", {}) or (
+        load_json(pkg / "metadata_youtube.json", {}) if is_clip else {}
+    )
+    title = meta.get("title", "")
+    desc = meta.get("description", "")
     do("titulo_le_100", 0 < len(title) <= 100, f"{len(title)} caracteres")
-    do("disclaimer", "asesoría" in desc or "asesoria" in desc, "disclaimer en descripción")
+    do(
+        "disclaimer",
+        "asesoría" in desc or "asesoria" in desc,
+        "disclaimer en descripción",
+    )
     man = load_json(pkg / "package_manifest.json", {})
     script = load_json(man.get("script", ""), {}) if man.get("script") else {}
     script_text = script.get("full_text", "")
     hits = sorted(set(scan_banned(script_text) + scan_banned(desc)))
     do("sin_venta_directa", not hits, f"hallazgos: {hits}" if hits else "limpio")
-    ret = retention_optimizer.score_script(script) if script else {"score": 0, "motivos": ["sin guión"]}
-    do("retencion_score_ge_70", ret["score"] >= 70, f"score {ret['score']}: {'; '.join(ret['motivos'])}")
+    ret = (
+        retention_optimizer.score_script(script)
+        if script
+        else {"score": 0, "motivos": ["sin guión"]}
+    )
+    do(
+        "retencion_score_ge_70",
+        ret["score"] >= 70,
+        f"score {ret['score']}: {'; '.join(ret['motivos'])}",
+    )
     # Marco de alcance (content/marco-alcance.md): hook sin contexto, jerga
     # explicada, señal objetivo con disparador y cierre en loop.
     for _name, (_ok, _det) in marco_checks(script).items():
         do(_name, _ok, _det)
     # Layout por zonas: ningún texto fuera de su zona ni cortado por el borde.
     lfails = layout_mod.validate_layout(script) if script else ["sin guión"]
-    do("layout_zonas_sin_solapes", not lfails, "; ".join(lfails) if lfails else "kicker/dato/apoyo/subtítulos medidos con PIL, zonas separadas")
+    do(
+        "layout_zonas_sin_solapes",
+        not lfails,
+        "; ".join(lfails)
+        if lfails
+        else "kicker/dato/apoyo/subtítulos medidos con PIL, zonas separadas",
+    )
     # Formato «foto real»: fotos reales con procedencia registrada o rechazo.
     script_format = (script.get("format") if script else None) or ""
-    if script_format in ("foto_real", "imagen_generada"):  # imagen_generada = alias histórico
+    if script_format in (
+        "foto_real",
+        "imagen_generada",
+    ):  # imagen_generada = alias histórico
         rfails = layout_mod.validate_real_images(script)
         aman = load_json(pkg / "animated_manifest.json", {})
         if aman.get("format") != "foto_real":
-            rfails.append("animated_manifest.json no declara format=foto_real "
-                          "(¿render con un assembler viejo de iconos o de imágenes generadas?)")
+            rfails.append(
+                "animated_manifest.json no declara format=foto_real "
+                "(¿render con un assembler viejo de iconos o de imágenes generadas?)"
+            )
         else:
             for u in aman.get("images", []):
-                f = (layout_mod.real_dir(script) / u.get("file", ""))
+                f = layout_mod.real_dir(script) / u.get("file", "")
                 if not f.exists():
                     rfails.append(f"foto usada en el render no existe: {u.get('file')}")
-                if not u.get("source") or not str(u.get("source_url", "")).startswith("http") or not u.get("license"):
-                    rfails.append(f"foto usada en el render sin procedencia registrada: {u.get('file')}")
+                if (
+                    not u.get("source")
+                    or not str(u.get("source_url", "")).startswith("http")
+                    or not u.get("license")
+                ):
+                    rfails.append(
+                        f"foto usada en el render sin procedencia registrada: {u.get('file')}"
+                    )
             if not aman.get("images"):
                 rfails.append("animated_manifest.json sin lista de fotos usadas")
-        do("fotos_reales_registradas", not rfails,
-           "; ".join(rfails) if rfails else "manifiesto de fotos reales con procedencia y licencia + 1 foto por escena, registradas en el render")
-        do("metraje_real_registrado", True, "paquete legado foto_real: no aplica (estándar vigente = metraje_real)")
+        do(
+            "fotos_reales_registradas",
+            not rfails,
+            "; ".join(rfails)
+            if rfails
+            else "manifiesto de fotos reales con procedencia y licencia + 1 foto por escena, registradas en el render",
+        )
+        do(
+            "metraje_real_registrado",
+            True,
+            "paquete legado foto_real: no aplica (estándar vigente = metraje_real)",
+        )
         do("tarjeta_cierre", True, "paquete legado foto_real: no aplica")
         do("voz_ritmo_1_20", True, "paquete legado foto_real: no aplica")
         do("musica_libre_registrada", True, "paquete legado foto_real: no aplica")
     elif script_format == "metraje_real":
         # ESTÁNDAR VIGENTE (MANDATO §3d): metraje real + voz 1.20× + cierre.
-        do("fotos_reales_registradas", True, "formato metraje_real: el check de fotos no aplica (ver metraje_real_registrado)")
+        do(
+            "fotos_reales_registradas",
+            True,
+            "formato metraje_real: el check de fotos no aplica (ver metraje_real_registrado)",
+        )
         vfails = layout_mod.validate_footage(script)
         fman = load_json(pkg / "footage_manifest.json", {})
         card_sec = 0.0
         if fman.get("format") != "metraje_real":
-            vfails.append("footage_manifest.json no declara format=metraje_real "
-                          "(¿render con un assembler que no es el del estándar vigente?)")
+            vfails.append(
+                "footage_manifest.json no declara format=metraje_real "
+                "(¿render con un assembler que no es el del estándar vigente?)"
+            )
         else:
             fdir = layout_mod.footage_dir(script)
             for u in fman.get("clips", []):
                 f = fdir / u.get("file", "")
                 if not f.exists():
                     vfails.append(f"clip usado en el render no existe: {u.get('file')}")
-                if not u.get("source") or not str(u.get("source_url", "")).startswith("http") or not u.get("license"):
-                    vfails.append(f"clip usado en el render sin procedencia registrada: {u.get('file')}")
+                if (
+                    not u.get("source")
+                    or not str(u.get("source_url", "")).startswith("http")
+                    or not u.get("license")
+                ):
+                    vfails.append(
+                        f"clip usado en el render sin procedencia registrada: {u.get('file')}"
+                    )
             if not fman.get("clips"):
                 vfails.append("footage_manifest.json sin lista de clips usados")
             segs = fman.get("segments", [])
             if len(segs) < 8:
-                vfails.append(f"edición con {len(segs)} cortes (<8): el listón pide cortes cada 4-6 s")
+                vfails.append(
+                    f"edición con {len(segs)} cortes (<8): el listón pide cortes cada 4-6 s"
+                )
             elif segs:
                 durs = [float(s.get("dur") or 0) for s in segs]
                 avg = sum(durs) / len(durs)
                 if not (3.8 <= avg <= 6.5):
-                    vfails.append(f"corte promedio de {avg:.2f} s (fuera de 3.8-6.5): listón = cortes cada 4-6 s, edición fluida y respirable")
+                    vfails.append(
+                        f"corte promedio de {avg:.2f} s (fuera de 3.8-6.5): listón = cortes cada 4-6 s, edición fluida y respirable"
+                    )
                 cortos = [(i + 1, d) for i, d in enumerate(durs) if i > 0 and d < 3.0]
                 if cortos:
-                    vfails.append("cortes bajo el mínimo de 3 s (solo el gancho inicial puede bajar): "
-                                  + ", ".join(f"#{i}={d:.2f} s" for i, d in cortos))
+                    vfails.append(
+                        "cortes bajo el mínimo de 3 s (solo el gancho inicial puede bajar): "
+                        + ", ".join(f"#{i}={d:.2f} s" for i, d in cortos)
+                    )
             card_sec = float((fman.get("closing_card") or {}).get("seconds") or 0)
-        do("metraje_real_registrado", not vfails,
-           "; ".join(vfails) if vfails else "manifiesto de metraje real con procedencia por clip + edición de cortes 4-6 s registrada")
+        do(
+            "metraje_real_registrado",
+            not vfails,
+            "; ".join(vfails)
+            if vfails
+            else "manifiesto de metraje real con procedencia por clip + edición de cortes 4-6 s registrada",
+        )
         # Tarjeta de cierre con el emblema vigente.
         cc = fman.get("closing_card", {}) if fman else {}
-        do("tarjeta_cierre", cc.get("present") is True and 2.0 <= card_sec <= 3.5
-           and "avatar-v2" in str(cc.get("emblem", "")),
-           f"presente={cc.get('present')}, {card_sec:.1f} s, emblema={cc.get('emblem', 'FALTA')}")
+        do(
+            "tarjeta_cierre",
+            cc.get("present") is True
+            and 2.0 <= card_sec <= 3.5
+            and "avatar-v2" in str(cc.get("emblem", "")),
+            f"presente={cc.get('present')}, {card_sec:.1f} s, emblema={cc.get('emblem', 'FALTA')}",
+        )
         # Voz a 1.20× EFECTIVO: length_scale == config y duración consistente.
         # Base medida de la voz es_MX-claude-high a 1.0×: 167 palabras/min
         # (guión de la Fed: 178 palabras -> 63.81 s, 2026-10-20).
         import yaml as _yaml
+
         _cfg = _yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")) or {}
         _ls_cfg = float(((_cfg.get("tts") or {}).get("piper_length_scale")) or 0)
         ttsm = load_json(pkg / "tts_manifest.json", {})
@@ -342,29 +590,60 @@ def check(pkg: Path) -> dict:
         words = len(script_text.split())
         voice_dur = dur - card_sec
         exp_dur = words / 167.0 * 60 / 1.20 if words else 0.0
-        ok_rate = (ls is not None and _ls_cfg > 0 and abs(float(ls) - _ls_cfg) <= 0.01
-                   and exp_dur > 0 and abs(voice_dur - exp_dur) <= max(3.5, exp_dur * 0.12))
-        do("voz_ritmo_1_20", ok_rate,
-           f"length_scale={ls} (config {_ls_cfg}), voz {voice_dur:.1f} s vs {exp_dur:.1f} s esperados a 1.20× efectivo")
+        ok_rate = (
+            ls is not None
+            and _ls_cfg > 0
+            and abs(float(ls) - _ls_cfg) <= 0.01
+            and exp_dur > 0
+            and abs(voice_dur - exp_dur) <= max(3.5, exp_dur * 0.12)
+        )
+        do(
+            "voz_ritmo_1_20",
+            ok_rate,
+            f"length_scale={ls} (config {_ls_cfg}), voz {voice_dur:.1f} s vs {exp_dur:.1f} s esperados a 1.20× efectivo",
+        )
         # Cama musical: solo registrada con licencia clara, o ausente declarada.
         mus = fman.get("music") if fman else None
-        do("musica_libre_registrada", mus is None or (bool(mus.get("license")) and bool(mus.get("source"))
-           and str(mus.get("source_url", "")).startswith("http")),
-           "sin cama musical (declarado)" if mus is None else
-           f"{mus.get('title', '?')} — {mus.get('license', 'SIN LICENCIA')} ({mus.get('source', '?')})")
+        do(
+            "musica_libre_registrada",
+            mus is None
+            or (
+                bool(mus.get("license"))
+                and bool(mus.get("source"))
+                and str(mus.get("source_url", "")).startswith("http")
+            ),
+            "sin cama musical (declarado)"
+            if mus is None
+            else f"{mus.get('title', '?')} — {mus.get('license', 'SIN LICENCIA')} ({mus.get('source', '?')})",
+        )
     else:
         do("fotos_reales_registradas", True, "formato sin foto real: no aplica")
         do("metraje_real_registrado", True, "formato sin metraje real: no aplica")
-        do("tarjeta_cierre", True, "formato sin tarjeta de cierre del estándar: no aplica")
-        do("voz_ritmo_1_20", True, "check de ritmo ligado al estándar metraje_real: no aplica")
-        do("musica_libre_registrada", True, "formato sin cama musical del estándar: no aplica")
+        do(
+            "tarjeta_cierre",
+            True,
+            "formato sin tarjeta de cierre del estándar: no aplica",
+        )
+        do(
+            "voz_ritmo_1_20",
+            True,
+            "check de ritmo ligado al estándar metraje_real: no aplica",
+        )
+        do(
+            "musica_libre_registrada",
+            True,
+            "formato sin cama musical del estándar: no aplica",
+        )
     # Fuentes en la descripción (solo piezas de actualidad).
     news = (script.get("news") if script else None) or meta.get("news") or {}
     if news:
         url = news.get("source_url", "")
         ok_url = isinstance(url, str) and url.startswith("http")
-        do("fuentes_en_descripcion", ok_url and "Fuentes:" in desc and url in desc,
-           f"fuente={news.get('fuente', '')[:60]} url={url or 'FALTA'} bloque={'sí' if 'Fuentes:' in desc else 'NO'}")
+        do(
+            "fuentes_en_descripcion",
+            ok_url and "Fuentes:" in desc and url in desc,
+            f"fuente={news.get('fuente', '')[:60]} url={url or 'FALTA'} bloque={'sí' if 'Fuentes:' in desc else 'NO'}",
+        )
     else:
         do("fuentes_en_descripcion", True, "pieza sin noticia (evergreen): no aplica")
     # Paquetes espejo: puertas extra de TikTok sobre el mismo MP4 maestro.
@@ -372,33 +651,62 @@ def check(pkg: Path) -> dict:
         tt = load_json(pkg / "metadata_tiktok.json", {})
         do("tiktok_metadata", bool(tt), "metadata_tiktok.json presente")
         if tt:
-            do("tiktok_ai_disclosure", tt.get("ai_disclosure") is True and bool(tt.get("ai_disclosure_label")),
-               "ai_disclosure=true + etiqueta (voz sintética Piper; TikTok lo exige)")
+            do(
+                "tiktok_ai_disclosure",
+                tt.get("ai_disclosure") is True and bool(tt.get("ai_disclosure_label")),
+                "ai_disclosure=true + etiqueta (voz sintética Piper; TikTok lo exige)",
+            )
             cap = tt.get("caption", "")
-            do("tiktok_caption", 0 < len(cap) <= 2200 and len(tt.get("hashtags", [])) >= 3,
-               f"{len(cap)} caracteres, {len(tt.get('hashtags', []))} hashtags")
+            do(
+                "tiktok_caption",
+                0 < len(cap) <= 2200 and len(tt.get("hashtags", [])) >= 3,
+                f"{len(cap)} caracteres, {len(tt.get('hashtags', []))} hashtags",
+            )
             tt_hits = sorted(set(scan_banned(cap)))
-            do("tiktok_sin_venta", not tt_hits, f"hallazgos: {tt_hits}" if tt_hits else "limpio")
-        do("espejo_fuente_propia", bool(man.get("source")),
-           "manifiesto con fuente espejo registrada (solo contenido nuestro)")
+            do(
+                "tiktok_sin_venta",
+                not tt_hits,
+                f"hallazgos: {tt_hits}" if tt_hits else "limpio",
+            )
+        do(
+            "espejo_fuente_propia",
+            bool(man.get("source")),
+            "manifiesto con fuente espejo registrada (solo contenido nuestro)",
+        )
     # QC visual: sin capturas no hay ready (la falla original fue no mirar).
     fdir = pkg / "frames"
     nframes = len(list(fdir.glob("frame-*.png"))) if fdir.exists() else 0
-    do("frames_qc_visual", nframes >= 3 and (fdir / "contacto.png").exists(),
-       f"{nframes} cuadros + {'contacto.png' if (fdir / 'contacto.png').exists() else 'SIN hoja de contacto'}")
-    publish_ready = not failures and "[RECURSO-GRATIS-" not in desc and "[ECOSISTEMA-" not in desc
-    result = {"package": str(pkg), "passed": not failures, "publish_ready": publish_ready,
-              "checks": checks, "failures": failures, "retention": ret,
-              "publish_note": "listo para publicar (si hay canal+token y auto_publish)"
-                              if publish_ready else
-                              "en ready/ pero NO publicable aún: placeholders de recursos gratis sin resolver o QC fallido"}
-    (pkg / "qc.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    do(
+        "frames_qc_visual",
+        nframes >= 3 and (fdir / "contacto.png").exists(),
+        f"{nframes} cuadros + {'contacto.png' if (fdir / 'contacto.png').exists() else 'SIN hoja de contacto'}",
+    )
+    publish_ready = (
+        not failures and "[RECURSO-GRATIS-" not in desc and "[ECOSISTEMA-" not in desc
+    )
+    result = {
+        "package": str(pkg),
+        "passed": not failures,
+        "publish_ready": publish_ready,
+        "checks": checks,
+        "failures": failures,
+        "retention": ret,
+        "publish_note": "listo para publicar (si hay canal+token y auto_publish)"
+        if publish_ready
+        else "en ready/ pero NO publicable aún: placeholders de recursos gratis sin resolver o QC fallido",
+    }
+    (pkg / "qc.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return result
 
+
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--package", required=True)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--package", required=True)
     args = ap.parse_args()
     print(json.dumps(check(Path(args.package)), ensure_ascii=False, indent=2))
+
 
 if __name__ == "__main__":
     main()
