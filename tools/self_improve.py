@@ -8,7 +8,10 @@ De cada maestro se extrae su patrón (tema, gancho, duración, categoría) y se
 agrega a content/retention-winners.md, que el ciclo escritor-juez usa
 como guía. Sin maestros nuevos, no escribe nada: no se aprende de ruido.
 """
-import csv, os, sys
+
+import csv
+import os
+import sys
 
 MIN_VIEWS = 50
 MIN_PCT = 60.0
@@ -31,7 +34,9 @@ def main():
     winners = []
     for r in rows:
         views = _f(r.get("vistas") or r.get("views"))
-        pct = _f(r.get("pct_visto") or r.get("avg_pct_viewed") or r.get("pct_completado"))
+        pct = _f(
+            r.get("pct_visto") or r.get("avg_pct_viewed") or r.get("pct_completado")
+        )
         if views >= MIN_VIEWS and pct >= MIN_PCT:
             winners.append(r)
     prev = open(OUT).read() if os.path.exists(OUT) else ""
@@ -45,10 +50,12 @@ def main():
         return 0
     with open(OUT, "a") as f:
         for w in nuevos:
-            f.write(f"\n- MAESTRO: «{w.get('titulo') or w.get('video')}» — "
-                    f"vistas {w.get('vistas')}, % visto {w.get('pct_visto') or w.get('pct_completado')}, "
-                    f"gancho: «{w.get('hook') or ''}», duración {w.get('duracion_s') or ''}s, "
-                    f"tema {w.get('tema') or ''}\n")
+            f.write(
+                f"\n- MAESTRO: «{w.get('titulo') or w.get('video')}» — "
+                f"vistas {w.get('vistas')}, % visto {w.get('pct_visto') or w.get('pct_completado')}, "
+                f"gancho: «{w.get('hook') or ''}», duración {w.get('duracion_s') or ''}s, "
+                f"tema {w.get('tema') or ''}\n"
+            )
     print(f"{len(nuevos)} patrón(es) nuevo(s) aprendidos de retención alta")
     return 0
 

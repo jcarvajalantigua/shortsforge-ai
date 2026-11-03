@@ -9,7 +9,13 @@
 - El escritor reescribe con AMBAS retroalimentaciones. Meta: 80. Intentos: 3.
   Se conserva el mejor; si el mejor queda <70, devuelve None (respaldo).
 """
-import json, os, re, sys, time, urllib.request
+
+import json
+import os
+import re
+import sys
+import time
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import script_generator as sg
@@ -39,9 +45,13 @@ def _opener():
 
 def _post(path, payload, timeout=180):
     cfg = sg.load_config()
-    hdrs = {"Content-Type": "application/json",
-            "Authorization": "Bearer " + sg._hermes_key(cfg)}
-    req = urllib.request.Request(GW + path, data=json.dumps(payload).encode(), headers=hdrs)
+    hdrs = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + sg._hermes_key(cfg),
+    }
+    req = urllib.request.Request(
+        GW + path, data=json.dumps(payload).encode(), headers=hdrs
+    )
     with _opener().open(req, timeout=timeout) as r:
         return json.loads(r.read())
 
@@ -55,22 +65,47 @@ def _to_script(topic, kind, text):
     closing = paras[-1] if paras else ""
     senal = sg.derive_senal(closing, text) or sg.SENAL_POR_KIND.get(kind, "suscripcion")
     words = len(text.split())
-    return {"topic": topic, "kind": kind, "mode": "llm-hermes-jev",
-            "full_text": text, "senal_objetivo": senal,
-            "estructura_alcance": {"hook_sin_contexto": True, "micro_curiosidad_cada_s": "12-15",
-                                   "cierre_loop": "¿" in closing or "?" in closing,
-                                   "senal_objetivo": senal},
-            "sections": {"hook_0_3s": hook, "desarrollo": paras[1:-1], "cierre_cta": closing},
-            "word_count": words, "estimated_seconds": sg.estimate_seconds(words),
-            "on_screen_text": [], "visual_plan": [], "disclaimer": sg.DISCLAIMER}
+    return {
+        "topic": topic,
+        "kind": kind,
+        "mode": "llm-hermes-jev",
+        "full_text": text,
+        "senal_objetivo": senal,
+        "estructura_alcance": {
+            "hook_sin_contexto": True,
+            "micro_curiosidad_cada_s": "12-15",
+            "cierre_loop": "¿" in closing or "?" in closing,
+            "senal_objetivo": senal,
+        },
+        "sections": {
+            "hook_0_3s": hook,
+            "desarrollo": paras[1:-1],
+            "cierre_cta": closing,
+        },
+        "word_count": words,
+        "estimated_seconds": sg.estimate_seconds(words),
+        "on_screen_text": [],
+        "visual_plan": [],
+        "disclaimer": sg.DISCLAIMER,
+    }
 
 
 def jev_judge(script, motivos):
-    q = ("¿Este guion de YouTube Short para hispanos en USA retiene a la audiencia hasta el final "
-         "y merece producirse tal cual? Los motivos del medidor automático son: " + "; ".join(motivos))
+    q = (
+        "¿Este guion de YouTube Short para hispanos en USA retiene a la audiencia hasta el final "
+        "y merece producirse tal cual? Los motivos del medidor automático son: "
+        + "; ".join(motivos)
+    )
     try:
-        out = _post("/decide", {"question": q, "context": "GUION:\n" + script["full_text"],
-                                "options": ["publicar", "reescribir", "descartar"]}, timeout=120)
+        out = _post(
+            "/decide",
+            {
+                "question": q,
+                "context": "GUION:\n" + script["full_text"],
+                "options": ["publicar", "reescribir", "descartar"],
+            },
+            timeout=120,
+        )
         return out.get("decision", ""), (out.get("raw", "") or "")[-400:]
     except Exception as e:
         return "", f"(jev no respondió: {e})"
@@ -86,7 +121,10 @@ def _winner_guidance():
         bloque = txt[ini:][:900]
         if "ninguno" in bloque.lower() and "pendiente" in bloque.lower():
             return ""
-        return "\n\nPATRONES GANADORES VERIFICADOS (videos reales con retención muy alta — imita su estructura):\n" + bloque
+        return (
+            "\n\nPATRONES GANADORES VERIFICADOS (videos reales con retención muy alta — imita su estructura):\n"
+            + bloque
+        )
     except Exception:
         return ""
 
@@ -98,10 +136,14 @@ def generate_judged(topic, kind="evergreen", log=print):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         t0 = time.time()
         try:
-            out = _post("/chat/completions",
-                        {"model": "bonsai-27b-q1",
-                         "messages": [{"role": "user", "content": prompt + feedback}],
-                         "temperature": 0.6})
+            out = _post(
+                "/chat/completions",
+                {
+                    "model": "bonsai-27b-q1",
+                    "messages": [{"role": "user", "content": prompt + feedback}],
+                    "temperature": 0.6,
+                },
+            )
             text = out["choices"][0]["message"]["content"]
         except Exception as e:
             log(f"[juez] intento {attempt}: Hermes falló ({e})")
@@ -109,28 +151,48 @@ def generate_judged(topic, kind="evergreen", log=print):
         cand = _to_script(topic, kind, text)
         sc = score_script(cand)
         score, motivos = sc["score"], sc["motivos"]
-        log(f"[juez] intento {attempt}: score {score} en {time.time()-t0:.0f}s "
-            f"({cand['word_count']} palabras)")
+        log(
+            f"[juez] intento {attempt}: score {score} en {time.time() - t0:.0f}s "
+            f"({cand['word_count']} palabras)"
+        )
         if score > best_score:
             best, best_score = cand, score
         if score >= TARGET:
             return best, best_score, attempt
         decision, raw = jev_judge(cand, motivos)
         log(f"[juez] jev: {decision}")
-        feedback = ("\n\nTU INTENTO ANTERIOR SACÓ " + str(score) + "/100. Problemas medidos: "
-                    + "; ".join(m for m in motivos if "+" not in m)
-                    + (f". El juez editorial decidió: {decision}." if decision else "")
-                    + " Reescribe corrigiendo TODO eso, misma estructura de 5 segmentos, "
-                      "105 a 135 palabras exactas.")
-    return (best, best_score, MAX_ATTEMPTS) if best_score >= FLOOR else (None, best_score, MAX_ATTEMPTS)
+        feedback = (
+            "\n\nTU INTENTO ANTERIOR SACÓ "
+            + str(score)
+            + "/100. Problemas medidos: "
+            + "; ".join(m for m in motivos if "+" not in m)
+            + (f". El juez editorial decidió: {decision}." if decision else "")
+            + " Reescribe corrigiendo TODO eso, misma estructura de 5 segmentos, "
+            "105 a 135 palabras exactas."
+        )
+    return (
+        (best, best_score, MAX_ATTEMPTS)
+        if best_score >= FLOOR
+        else (None, best_score, MAX_ATTEMPTS)
+    )
 
 
 if __name__ == "__main__":
-    topics = sys.argv[1:] or ["El error de crédito que baja tu puntaje sin que lo sepas"]
+    topics = sys.argv[1:] or [
+        "El error de crédito que baja tu puntaje sin que lo sepas"
+    ]
     for t in topics:
         print("TEMA:", t)
         s, score, n = generate_judged(t)
-        print("RESULTADO:", "score", score, "| intentos", n, "| modo", (s or {}).get("mode"))
+        print(
+            "RESULTADO:",
+            "score",
+            score,
+            "| intentos",
+            n,
+            "| modo",
+            (s or {}).get("mode"),
+        )
         if s:
             print("HOOK:", s["sections"]["hook_0_3s"][:100])
         print()

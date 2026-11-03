@@ -8,15 +8,20 @@ del nicho, progreso YPP, distancia al primer pago) y línea de INTERCONEXIÓN
 (piezas en ready/ y su bloque de recursos gratis, siempre sin vender).
 Uso: python3 automation/report.py
 """
-import csv, json, sys
+
+import csv
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-from common import load_json, load_config  # noqa: E402
+from common import load_config, load_json
+
 
 def main():
-    cfg = load_config(); targets = cfg.get("monetization_targets", {}) or {}
+    cfg = load_config()
+    targets = cfg.get("monetization_targets", {}) or {}
     state = load_json(ROOT / "automation" / "state.json", {})
     queue = load_json(ROOT / "content" / "queue.json", [])
     ready = sorted(p.name for p in (ROOT / "ready").glob("*") if p.is_dir())
@@ -29,43 +34,71 @@ def main():
         rows = list(csv.DictReader(acsv.open(encoding="utf-8")))
         if rows:
             last = rows[-1]
-            subs = float(last.get("subscribers") or last.get("subs") or 0); views = float(last.get("shorts_views_90d") or 0)
+            subs = float(last.get("subscribers") or last.get("subs") or 0)
+            views = float(last.get("shorts_views_90d") or 0)
             hours = float(last.get("watch_hours_12m") or 0)
     fecha = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         sys.path.insert(0, str(ROOT / "tools"))
         import revenue_estimator as _re
-        _rk = _re.ranking(); _me = _re.monthly_estimate(3, 1)
+
+        _rk = _re.ranking()
+        _me = _re.monthly_estimate(3, 1)
         _ranking_txt = "\n".join(
             f"- {r['subtema']}: ${r['ingreso_por_pieza_largo_base_usd']:.0f}/largo y ${r['ingreso_por_pieza_shorts_base_usd']:.2f}/Short (base ESTIMADO, RPM largo ${r['rpm_largo_base']:.0f})"
-            for r in _rk)
-        _ranking_txt += (f"\n- Estimación mensual al ritmo actual (ESTIMADO, canal monetizado): "
-                         f"pesimista ${_me['pesimista']} · base ${_me['base']} · optimista ${_me['optimista']}.")
+            for r in _rk
+        )
+        _ranking_txt += (
+            f"\n- Estimación mensual al ritmo actual (ESTIMADO, canal monetizado): "
+            f"pesimista ${_me['pesimista']} · base ${_me['base']} · optimista ${_me['optimista']}."
+        )
     except Exception as _e:
         _ranking_txt = f"- (estimador no disponible: {_e})"
-    cuello = ("Crear el canal + OAuth del dueño (única acción humana pendiente)"
-              if not state.get("checks", {}).get("oauth", {}).get("token")
-              else "Conectar los placeholders de recursos gratis del ecosistema"
-              if any("[RECURSO-GRATIS-" in (load_json(ROOT / "ready" / r / "metadata.json", {}).get("description", ""))
-                     for r in ready)
-              else "Producir el primer video largo (ruta 4.000 h)")
+    cuello = (
+        "Crear el canal + OAuth del dueño (única acción humana pendiente)"
+        if not state.get("checks", {}).get("oauth", {}).get("token")
+        else "Conectar los placeholders de recursos gratis del ecosistema"
+        if any(
+            "[RECURSO-GRATIS-"
+            in (
+                load_json(ROOT / "ready" / r / "metadata.json", {}).get(
+                    "description", ""
+                )
+            )
+            for r in ready
+        )
+        else "Producir el primer video largo (ruta 4.000 h)"
+    )
     _pub = load_json(ROOT / "content" / "published.json", [])
     _res = [r for r in _pub if "resumen" in str(r.get("slug", "")).lower()]
-    _resumen_txt = (f"- Publicado: https://youtube.com/watch?v={_res[-1].get('youtube_video_id')} (enlazado al informe como manda el MANDATO)."
-                    if _res else "- Aún sin publicar (no hay canal): guión del primer Resumen en `content/guiones-largos/02-resumen-semana-cola-fed-irs.md`; al publicarse, este informe lo enlaza automáticamente desde `content/published.json`.")
+    _resumen_txt = (
+        f"- Publicado: https://youtube.com/watch?v={_res[-1].get('youtube_video_id')} (enlazado al informe como manda el MANDATO)."
+        if _res
+        else "- Aún sin publicar (no hay canal): guión del primer Resumen en `content/guiones-largos/02-resumen-semana-cola-fed-irs.md`; al publicarse, este informe lo enlaza automáticamente desde `content/published.json`."
+    )
     inter = []
     for r in ready:
         meta = load_json(ROOT / "ready" / r / "metadata.json", {})
-        tag = "recurso gratis del tema" if "Recursos gratis" in meta.get("description", "") else "sin bloque"
-        fmt = "animado" if (ROOT / "ready" / r / "animated_manifest.json").exists() else "estándar"
-        inter.append(f"  - ready/{r} [{fmt}]: bloque «Recursos gratis» + «Más de nuestro ecosistema» ({tag}, sin venta)")
+        tag = (
+            "recurso gratis del tema"
+            if "Recursos gratis" in meta.get("description", "")
+            else "sin bloque"
+        )
+        fmt = (
+            "animado"
+            if (ROOT / "ready" / r / "animated_manifest.json").exists()
+            else "estándar"
+        )
+        inter.append(
+            f"  - ready/{r} [{fmt}]: bloque «Recursos gratis» + «Más de nuestro ecosistema» ({tag}, sin venta)"
+        )
     lines = f"""# Reporte semanal — Your Channel ({fecha})
 
 ## Producción
 - Videos producidos (paquetes con Short renderizado): **{len(produced)}**
 - En cola `ready/` (QC aprobado, esperando canal): **{len(ready)}**
-- Temas pendientes en banco: **{pending}** · Rechazados por QC: **{len(qc_fails)}** {qc_fails if qc_fails else ''}
-- Estado del sistema: healthy={state.get('healthy')} · modo conservador={state.get('conservative_mode')} · publicación bloqueada={state.get('publish_blocked')}
+- Temas pendientes en banco: **{pending}** · Rechazados por QC: **{len(qc_fails)}** {qc_fails if qc_fails else ""}
+- Estado del sistema: healthy={state.get("healthy")} · modo conservador={state.get("conservative_mode")} · publicación bloqueada={state.get("publish_blocked")}
 
 ## Dinero y meta (con números)
 - **Estado honesto hoy: revenue real = ${float(last.get("revenue_usd") or 0) if rows else 0:.2f}.** Sin canal creado y antes del Partner Program, YouTube no paga anuncios: $0 es la cifra real, no una estimación.
@@ -78,7 +111,7 @@ def main():
 - **Hitos (meta interna, no promesa):** Día 30: canal publicado, ritmo de 1 principal/día + espejo sostenido y primeras métricas reales. Día 60: checkpoint de 500 subs (fan funding). Día 90: evaluación formal contra YPP con fecha proyectada calculada de los datos reales.
 
 ## Dinero (responsabilidad de Muse — MANDATO.md)
-- RPM de referencia del nicho: Shorts {targets.get('niche_rpm_reference_usd', {}).get('shorts_per_1000', '0.15-0.25')} USD/1.000 · Largo {targets.get('niche_rpm_reference_usd', {}).get('long_per_1000', '10-22')} USD/1.000 (estimado del nicho, NO ingreso real todavía).
+- RPM de referencia del nicho: Shorts {targets.get("niche_rpm_reference_usd", {}).get("shorts_per_1000", "0.15-0.25")} USD/1.000 · Largo {targets.get("niche_rpm_reference_usd", {}).get("long_per_1000", "10-22")} USD/1.000 (estimado del nicho, NO ingreso real todavía).
 - Progreso YPP: **{subs:.0f} / 1.000 subs** · **{views:.0f} / 10.000.000 vistas Shorts (90 días)** · **{hours:.0f} / 4.000 h** de video largo.
 - Distancia al primer pago AdSense: faltan {max(0, 1000 - subs):.0f} subs y completar una ruta de horas/vistas; sin canal creado aún, el ingreso real es $0 — la meta inmediata es la elegibilidad, no la cifra.
 
@@ -87,12 +120,12 @@ def main():
 - **Pivote aplicado:** la mezcla de la próxima semana se re-pesa hacia los 2 subtemas top por ingreso estimado por pieza (más slots diarios y el tema del largo), con la excepción de embudo del MANDATO: el subtema que trae los suscriptores no pierde su slot aunque rankee bajo en dinero.
 
 ## Interconexión sin vender (MANDATO.md)
-{chr(10).join(inter) if inter else '  - Sin piezas en ready/ todavía.'}
+{chr(10).join(inter) if inter else "  - Sin piezas en ready/ todavía."}
 - Regla aplicada: solo recursos gratuitos; prohibidos precios, checkout y pitch (el QC rechaza venta directa).
 
 ## Fallos y supervisión
-- Última supervisión de Muse: {state.get('last_supervision_at', 'sin registrar')}
-- Motivos registrados: {state.get('reasons', [])}
+- Última supervisión de Muse: {state.get("last_supervision_at", "sin registrar")}
+- Motivos registrados: {state.get("reasons", [])}
 
 ## Video «Resumen de la semana»
 {_resumen_txt}
@@ -105,6 +138,7 @@ def main():
     out.write_text(lines, encoding="utf-8")
     print(lines)
     print(f"[report] escrito en {out}")
+
 
 if __name__ == "__main__":
     main()
